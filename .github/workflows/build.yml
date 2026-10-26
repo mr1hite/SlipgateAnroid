@@ -47,41 +47,8 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Fix settings.gradle and Build APK
+      - name: Build Debug APK
         run: |
-          # Ищем любой файл settings.gradle или settings.gradle.kts в репозитории
-          FOUND_SETTINGS=$(find . -name "settings.gradle*" | head -n 1)
-
-          if [ -n "$FOUND_SETTINGS" ]; then
-            echo "Found settings file at: $FOUND_SETTINGS"
-            # Если он лежал не в корне, копируем его в корень под именем settings.gradle.kts
-            cp "$FOUND_SETTINGS" ./settings.gradle.kts
-          else
-            echo "Settings file not found at all, creating standard settings.gradle.kts in root"
-            cat << 'EOF' > settings.gradle.kts
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = "SlipgateAnroid"
-          include(":app")
-          EOF
-          fi
-
-          echo "Root directory contents:"
-          ls -la
-
-          # Запускаем сборку
           gradle :app:assembleDebug --no-daemon
 
       - name: Upload Slipgate APK Artifact
