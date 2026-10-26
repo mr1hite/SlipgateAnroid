@@ -19,8 +19,9 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android SDK & NDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Compile native ByeDPI (libciadpi.so) for ARM64 & ARMv7
         run: |
@@ -28,7 +29,11 @@ jobs:
           mkdir -p app/src/main/jniLibs/arm64-v8a
           mkdir -p app/src/main/jniLibs/armeabi-v7a
 
-          NDK_TOOLCHAIN="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          # Находим актуальную папку NDK на раннере GitHub
+          NDK_PATH="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          NDK_TOOLCHAIN="$NDK_PATH/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          echo "Using NDK Toolchain at: $NDK_TOOLCHAIN"
 
           # Сборка под arm64-v8a
           make -C /tmp/byedpi clean
@@ -41,7 +46,7 @@ jobs:
           cp /tmp/byedpi/ciadpi app/src/main/jniLibs/armeabi-v7a/libciadpi.so
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
