@@ -32,7 +32,7 @@ jobs:
           mkdir -p app/src/main/jniLibs/arm64-v8a
           mkdir -p app/src/main/jniLibs/armeabi-v7a
 
-          # Ищем актуальную папку NDK на сервере GitHub
+          # Поиск рабочей директории NDK на раннере
           if [ -n "$ANDROID_NDK_LATEST_HOME" ]; then
             NDK_PATH="$ANDROID_NDK_LATEST_HOME"
           elif [ -n "$ANDROID_NDK_HOME" ]; then
@@ -60,7 +60,7 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon
+        run: gradle :app:assembleDebug --no-daemon
 
       - name: Upload Slipgate APK Artifact
         uses: actions/upload-artifact@v4
