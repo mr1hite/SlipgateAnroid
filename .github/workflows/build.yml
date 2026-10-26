@@ -48,7 +48,7 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon
+        run: gradle -c settings.gradle.kts :app:assembleDebug --no-daemon
 
       - name: Upload Slipgate APK Artifact
         uses: actions/upload-artifact@v4
