@@ -3,16 +3,11 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.slipgate.android">
 
-    <!-- Основные сетевые и фоновые разрешения -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- Разрешение для Автозапуска при включении смартфона -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-    <!-- Разрешение на чтение списка установленных приложений для Split Tunneling -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
@@ -21,10 +16,8 @@
         android:allowBackup="true"
         android:label="Slipgate Android"
         android:supportsRtl="true"
-        android:extractNativeLibs="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
-        <!-- Главный экран приложения -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -34,21 +27,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Локальный VPN-сервис для перехвата трафика и запуска ciadpi -->
         <service
             android:name=".SlipgateVpnService"
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            android:foregroundServiceType="specialUse">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="vpn" />
-        </service>
+            android:foregroundServiceType="specialUse" />
 
-        <!-- Ресивер для автозапуска после перезагрузки или обновления APK -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
@@ -56,3 +40,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
