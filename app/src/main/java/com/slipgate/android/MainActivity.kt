@@ -67,7 +67,6 @@ class MainActivity : ComponentActivity() {
                 var isPaused by remember { mutableStateOf(false) }
                 val testResults = remember { mutableStateListOf<TestResult>() }
 
-                // Состояние для Split Tunneling
                 var selectedApps by remember {
                     mutableStateOf(AppListManager.getSelectedApps(this@MainActivity))
                 }
@@ -77,7 +76,6 @@ class MainActivity : ComponentActivity() {
                 val scope = rememberCoroutineScope()
                 var testJob by remember { mutableStateOf<Job?>(null) }
 
-                // Подгружаем список приложений в фоне при открытии вкладки
                 LaunchedEffect(currentTab) {
                     if (currentTab == 1 && installedApps.isEmpty()) {
                         installedApps = withContext(Dispatchers.IO) {
@@ -92,7 +90,6 @@ class MainActivity : ComponentActivity() {
                         .background(Color(0xFF0D0F17))
                         .padding(16.dp)
                 ) {
-                    // Верхняя панель
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -126,7 +123,6 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Главная кнопка запуска / остановки
                     Button(
                         onClick = {
                             if (isRunning) {
@@ -158,7 +154,6 @@ class MainActivity : ComponentActivity() {
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Вкладки: Стратегии | Приложения
                     TabRow(
                         selectedTabIndex = currentTab,
                         containerColor = Color(0xFF171B26),
@@ -167,7 +162,7 @@ class MainActivity : ComponentActivity() {
                         Tab(
                             selected = currentTab == 0,
                             onClick = { currentTab = 0 },
-                            text = { Text("⚡ Стратегии (${Strategies.presets.size})") }
+                            text = { Text("⚡ Стратегии") }
                         )
                         Tab(
                             selected = currentTab == 1,
@@ -179,7 +174,6 @@ class MainActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.height(12.dp))
 
                     if (currentTab == 0) {
-                        // === ВКЛАДКА 1: СТРАТЕГИИ И АВТОТЕСТ ===
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF171B26)),
                             shape = RoundedCornerShape(12.dp),
@@ -281,9 +275,7 @@ class MainActivity : ComponentActivity() {
                                             selectedId = strat.id
                                             prefs.edit().putString("selected_strategy", strat.id).apply()
                                             statusText = "Выбрана: ${strat.name}"
-                                            if (isRunning) {
-                                                restartVpn()
-                                            }
+                                            if (isRunning) restartVpn()
                                         }
                                 ) {
                                     Column(modifier = Modifier.padding(12.dp)) {
@@ -323,20 +315,11 @@ class MainActivity : ComponentActivity() {
                                             color = Color(0xFF7C4DFF),
                                             fontSize = 11.sp
                                         )
-                                        if (result != null) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(
-                                                text = result.details,
-                                                color = Color(0xFFB0BEC5),
-                                                fontSize = 11.sp
-                                            )
-                                        }
                                     }
                                 }
                             }
                         }
                     } else {
-                        // === ВКЛАДКА 2: ФИЛЬТР ПРИЛОЖЕНИЙ (SPLIT TUNNELING) ===
                         Card(
                             colors = CardDefaults.cardColors(containerColor = Color(0xFF171B26)),
                             shape = RoundedCornerShape(10.dp),
@@ -356,14 +339,6 @@ class MainActivity : ComponentActivity() {
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp
                                     )
-                                    Text(
-                                        text = if (whitelistMode)
-                                            "Обход DPI работает только для отмеченных галочкой приложений"
-                                        else
-                                            "Отмеченные приложения идут напрямую мимо VPN",
-                                        color = Color(0xFF8A94A6),
-                                        fontSize = 12.sp
-                                    )
                                 }
                                 Switch(
                                     checked = whitelistMode,
@@ -381,7 +356,7 @@ class MainActivity : ComponentActivity() {
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            label = { Text("Поиск по названию или пакету (youtube, discord...)") },
+                            label = { Text("Поиск приложения") },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -397,7 +372,7 @@ class MainActivity : ComponentActivity() {
                             verticalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(filteredApps, key = { it.packageName }) { app ->
+                            items(filteredApps) { app ->
                                 val isChecked = app.packageName in selectedApps
                                 Card(
                                     colors = CardDefaults.cardColors(
