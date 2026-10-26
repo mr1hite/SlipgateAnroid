@@ -13,25 +13,33 @@
 
     <application
         android:allowBackup="true"
-        android:label="Slipgate Android"
+        android:label="Slipgate"
+        android:icon="@android:drawable/ic_lock_lock"
+        android:roundIcon="@android:drawable/ic_lock_lock"
         android:supportsRtl="true"
+        android:extractNativeLibs="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
+        <!-- Главный экран для запуска с рабочего стола -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:label="Slipgate"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.action.LAUNCHER" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- VPN-сервис для перехвата пакетов и обхода DPI -->
         <service
             android:name=".SlipgateVpnService"
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse" />
 
+        <!-- Автозапуск при включении смартфона -->
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
