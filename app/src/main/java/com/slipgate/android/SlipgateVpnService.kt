@@ -17,7 +17,6 @@ class SlipgateVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var ciadpiProcess: Process? = null
 
-    // Нативный мост к libhev-socks5-tunnel.so (если подключён через JNI)
     companion object {
         const val ACTION_START = "com.slipgate.android.START"
         const val ACTION_STOP = "com.slipgate.android.STOP"
@@ -42,7 +41,6 @@ class SlipgateVpnService : VpnService() {
         val prefs = getSharedPreferences("slipgate_prefs", Context.MODE_PRIVATE)
         val selectedId = prefs.getString("selected_strategy", "sg_1") ?: "sg_1"
         val customArgs = prefs.getString("custom_args", "")?.trim() ?: ""
-        // Режим: true = обход ТОЛЬКО для выбранных (Whitelist), false = для всех, КРОМЕ выбранных
         val whitelistMode = prefs.getBoolean("whitelist_mode", true)
         val selectedApps = AppListManager.getSelectedApps(this)
 
@@ -58,7 +56,7 @@ class SlipgateVpnService : VpnService() {
             buildNotification("Стратегия: ${strategy.name} • Приложений: ${selectedApps.size}")
         )
 
-        // 1. Запускаем libciadpi.so на 127.0.0.1:1080
+        // Запуск нативного ciadpi на 127.0.0.1:1080
         val nativeDir = applicationInfo.nativeLibraryDir
         val ciadpiBin = File(nativeDir, "libciadpi.so")
         val cmd = mutableListOf(ciadpiBin.absolutePath, "-i", "127.0.0.1", "-p", "1080")
@@ -72,7 +70,6 @@ class SlipgateVpnService : VpnService() {
             return
         }
 
-        // 2. Настраиваем интерфейс VpnService и Split Tunneling
         val builder = Builder()
             .setSession("Slipgate DPI")
             .setMtu(1500)
@@ -82,18 +79,14 @@ class SlipgateVpnService : VpnService() {
             .addDnsServer("8.8.8.8")
 
         if (whitelistMode && selectedApps.isNotEmpty()) {
-            // Заворачиваем ТОЛЬКО выбранные приложения (YouTube, Discord и т.д.)
             for (pkg in selectedApps) {
                 if (pkg == packageName) continue
                 try {
                     packageManager.getPackageInfo(pkg, 0)
                     builder.addAllowedApplication(pkg)
-                } catch (_: PackageManager.NameNotFoundException) {
-                    // Приложение не установлено на телефоне — пропускаем
-                }
+                } catch (_: PackageManager.NameNotFoundException) {}
             }
         } else {
-            // Заворачиваем ВЕСЬ трафик, кроме самого Slipgate и отмеченных исключений
             try {
                 builder.addDisallowedApplication(packageName)
             } catch (_: Exception) {}
@@ -122,7 +115,13 @@ class SlipgateVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = null
         } catch (_: Exception) {}
-        stopForeground(true)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
         stopSelf()
     }
 
@@ -150,6 +149,7 @@ class SlipgateVpnService : VpnService() {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, "slipgate_vpn")
         } else {
+            @Suppress("DEPRECATION")
             Notification.Builder(this)
         }
         return builder
