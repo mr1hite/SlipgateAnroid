@@ -24,8 +24,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -46,12 +48,16 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
+                var currentTab by remember { mutableIntStateOf(0) }
                 var isRunning by remember { mutableStateOf(SlipgateVpnService.isRunning) }
                 var selectedId by remember {
                     mutableStateOf(prefs.getString("selected_strategy", "sg_1") ?: "sg_1")
                 }
                 var autoStart by remember {
                     mutableStateOf(prefs.getBoolean("auto_start", false))
+                }
+                var whitelistMode by remember {
+                    mutableStateOf(prefs.getBoolean("whitelist_mode", true))
                 }
                 var customArgs by remember {
                     mutableStateOf(prefs.getString("custom_args", "") ?: "")
@@ -60,8 +66,25 @@ class MainActivity : ComponentActivity() {
                 var isTesting by remember { mutableStateOf(false) }
                 var isPaused by remember { mutableStateOf(false) }
                 val testResults = remember { mutableStateListOf<TestResult>() }
+
+                // Состояние для Split Tunneling
+                var selectedApps by remember {
+                    mutableStateOf(AppListManager.getSelectedApps(this@MainActivity))
+                }
+                var installedApps by remember { mutableStateOf<List<AppEntry>>(emptyList()) }
+                var searchQuery by remember { mutableStateOf("") }
+
                 val scope = rememberCoroutineScope()
                 var testJob by remember { mutableStateOf<Job?>(null) }
+
+                // Подгружаем список приложений в фоне при открытии вкладки
+                LaunchedEffect(currentTab) {
+                    if (currentTab == 1 && installedApps.isEmpty()) {
+                        installedApps = withContext(Dispatchers.IO) {
+                            AppListManager.getInstalledApps(this@MainActivity, selectedApps)
+                        }
+                    }
+                }
 
                 Column(
                     modifier = Modifier
@@ -69,7 +92,7 @@ class MainActivity : ComponentActivity() {
                         .background(Color(0xFF0D0F17))
                         .padding(16.dp)
                 ) {
-                    // Шапка в стиле Slipgate
+                    // Верхняя панель
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -83,12 +106,11 @@ class MainActivity : ComponentActivity() {
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                text = "No-Root DPI Desync & Scanner",
+                                text = "No-Root DPI Desync & Split Tunnel",
                                 color = Color(0xFF8A94A6),
                                 fontSize = 12.sp
                             )
                         }
-                        // Тумблер Автозапуска
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Автозапуск", color = Color.White, fontSize = 13.sp)
                             Spacer(modifier = Modifier.width(6.dp))
@@ -102,9 +124,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // Главная кнопка запуска / остановки обхода
+                    // Главная кнопка запуска / остановки
                     Button(
                         onClick = {
                             if (isRunning) {
@@ -114,7 +136,7 @@ class MainActivity : ComponentActivity() {
                             } else {
                                 requestAndStartVpn {
                                     isRunning = true
-                                    statusText = "Обход активен (порт 1080)"
+                                    statusText = "Обход активен (${selectedApps.size} прил.)"
                                 }
                             }
                         },
@@ -124,7 +146,7 @@ class MainActivity : ComponentActivity() {
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(54.dp)
+                            .height(52.dp)
                     ) {
                         Text(
                             text = if (isRunning) "ОСТАНОВИТЬ ОБХОД DPI" else "ЗАПУСТИТЬ ОБХОД БЛОКИРОВОК",
@@ -134,170 +156,288 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // Панель автоподбора стратегий с поддержкой паузы
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF171B26)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                    // Вкладки: Стратегии | Приложения
+                    TabRow(
+                        selectedTabIndex = currentTab,
+                        containerColor = Color(0xFF171B26),
+                        contentColor = Color(0xFF8C62FF)
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                text = statusText,
-                                color = Color(0xFF00E676),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        if (!isTesting) {
-                                            testResults.clear()
-                                            isTesting = true
-                                            isPaused = false
-                                            testJob = scope.launch {
-                                                tester.runAllTests(
-                                                    onProgress = { statusText = it },
-                                                    onResult = { res ->
-                                                        testResults.add(res)
-                                                        testResults.sortWith(
-                                                            compareByDescending<TestResult> { it.passedCount }
-                                                                .thenBy { it.avgLatencyMs }
-                                                        )
-                                                    }
-                                                )
-                                                isTesting = false
-                                            }
-                                        } else {
-                                            testJob?.cancel()
-                                            isTesting = false
-                                            statusText = "Тестирование отменено"
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFF651FFF)
-                                    ),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(if (isTesting) "Стоп тест" else "⚡ Тест стратегий")
-                                }
+                        Tab(
+                            selected = currentTab == 0,
+                            onClick = { currentTab = 0 },
+                            text = { Text("⚡ Стратегии (${Strategies.presets.size})") }
+                        )
+                        Tab(
+                            selected = currentTab == 1,
+                            onClick = { currentTab = 1 },
+                            text = { Text("📱 Приложения (${selectedApps.size})") }
+                        )
+                    }
 
-                                if (isTesting) {
-                                    OutlinedButton(
-                                        onClick = { isPaused = tester.togglePause() },
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (currentTab == 0) {
+                        // === ВКЛАДКА 1: СТРАТЕГИИ И АВТОТЕСТ ===
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF171B26)),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = statusText,
+                                    color = Color(0xFF00E676),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            if (!isTesting) {
+                                                testResults.clear()
+                                                isTesting = true
+                                                isPaused = false
+                                                testJob = scope.launch {
+                                                    tester.runAllTests(
+                                                        onProgress = { statusText = it },
+                                                        onResult = { res ->
+                                                            testResults.add(res)
+                                                            testResults.sortWith(
+                                                                compareByDescending<TestResult> { it.passedCount }
+                                                                    .thenBy { it.avgLatencyMs }
+                                                            )
+                                                        }
+                                                    )
+                                                    isTesting = false
+                                                }
+                                            } else {
+                                                testJob?.cancel()
+                                                isTesting = false
+                                                statusText = "Тестирование отменено"
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF651FFF)
+                                        ),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text(if (isPaused) "▶ Продолжить" else "⏸ Пауза")
+                                        Text(if (isTesting) "Стоп тест" else "⚡ Тест стратегий")
+                                    }
+
+                                    if (isTesting) {
+                                        OutlinedButton(
+                                            onClick = { isPaused = tester.togglePause() },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(if (isPaused) "▶ Продолжить" else "⏸ Пауза")
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    // Поле для своих аргументов командной строки (опционально)
-                    OutlinedTextField(
-                        value = customArgs,
-                        onValueChange = {
-                            customArgs = it
-                            prefs.edit().putString("custom_args", it).apply()
-                        },
-                        label = { Text("Свои флаги ciadpi (оставь пустым для пресета)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        OutlinedTextField(
+                            value = customArgs,
+                            onValueChange = {
+                                customArgs = it
+                                prefs.edit().putString("custom_args", it).apply()
+                            },
+                            label = { Text("Свои флаги ciadpi (пусто = использовать пресет)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                    Text(
-                        text = "Доступные стратегии (нажми для выбора):",
-                        color = Color.LightGray,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(Strategies.presets) { strat ->
+                                val isSelected = strat.id == selectedId
+                                val result = testResults.find { it.strategy.id == strat.id }
 
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    // Список стратегий + результаты тестов
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(Strategies.presets) { strat ->
-                            val isSelected = strat.id == selectedId
-                            val result = testResults.find { it.strategy.id == strat.id }
-
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSelected) Color(0xFF23293A) else Color(0xFF151821)
-                                ),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .border(
-                                        width = if (isSelected) 2.dp else 0.dp,
-                                        color = if (isSelected) Color(0xFF8C62FF) else Color.Transparent,
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
-                                    .clickable {
-                                        selectedId = strat.id
-                                        prefs.edit().putString("selected_strategy", strat.id).apply()
-                                        statusText = "Выбрана: ${strat.name}"
-                                        if (isRunning) {
-                                            controlVpn(false)
-                                            controlVpn(true)
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSelected) Color(0xFF23293A) else Color(0xFF151821)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .border(
+                                            width = if (isSelected) 2.dp else 0.dp,
+                                            color = if (isSelected) Color(0xFF8C62FF) else Color.Transparent,
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        .clickable {
+                                            selectedId = strat.id
+                                            prefs.edit().putString("selected_strategy", strat.id).apply()
+                                            statusText = "Выбрана: ${strat.name}"
+                                            if (isRunning) {
+                                                restartVpn()
+                                            }
                                         }
-                                    }
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = strat.name,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 15.sp
+                                            )
+                                            if (result != null) {
+                                                val badgeColor = when {
+                                                    result.passedCount == result.totalCount -> Color(0xFF00E676)
+                                                    result.passedCount >= 3 -> Color(0xFFFFD600)
+                                                    else -> Color(0xFFFF5252)
+                                                }
+                                                Text(
+                                                    text = "${result.passedCount}/${result.totalCount} (${result.avgLatencyMs}ms)",
+                                                    color = badgeColor,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = strat.name,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 15.sp
+                                            text = strat.description,
+                                            color = Color(0xFF9E9E9E),
+                                            fontSize = 12.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = strat.rawArgs,
+                                            color = Color(0xFF7C4DFF),
+                                            fontSize = 11.sp
                                         )
                                         if (result != null) {
-                                            val badgeColor = when {
-                                                result.passedCount == result.totalCount -> Color(0xFF00E676)
-                                                result.passedCount >= 3 -> Color(0xFFFFD600)
-                                                else -> Color(0xFFFF5252)
-                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
                                             Text(
-                                                text = "${result.passedCount}/${result.totalCount} (${result.avgLatencyMs}ms)",
-                                                color = badgeColor,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
+                                                text = result.details,
+                                                color = Color(0xFFB0BEC5),
+                                                fontSize = 11.sp
                                             )
                                         }
                                     }
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+                            }
+                        }
+                    } else {
+                        // === ВКЛАДКА 2: ФИЛЬТР ПРИЛОЖЕНИЙ (SPLIT TUNNELING) ===
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF171B26)),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = strat.description,
-                                        color = Color(0xFF9E9E9E),
+                                        text = if (whitelistMode) "Режим: Только выбранные" else "Режим: Все, кроме выбранных",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = if (whitelistMode)
+                                            "Обход DPI работает только для отмеченных галочкой приложений"
+                                        else
+                                            "Отмеченные приложения идут напрямую мимо VPN",
+                                        color = Color(0xFF8A94A6),
                                         fontSize = 12.sp
                                     )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = strat.rawArgs,
-                                        color = Color(0xFF7C4DFF),
-                                        fontSize = 11.sp
-                                    )
-                                    if (result != null) {
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = result.details,
-                                            color = Color(0xFFB0BEC5),
-                                            fontSize = 11.sp
+                                }
+                                Switch(
+                                    checked = whitelistMode,
+                                    onCheckedChange = {
+                                        whitelistMode = it
+                                        prefs.edit().putBoolean("whitelist_mode", it).apply()
+                                        if (isRunning) restartVpn()
+                                    }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            label = { Text("Поиск по названию или пакету (youtube, discord...)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val filteredApps = installedApps.filter {
+                            it.name.contains(searchQuery, ignoreCase = true) ||
+                                    it.packageName.contains(searchQuery, ignoreCase = true)
+                        }
+
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(filteredApps, key = { it.packageName }) { app ->
+                                val isChecked = app.packageName in selectedApps
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isChecked) Color(0xFF23293A) else Color(0xFF151821)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val updated = selectedApps.toMutableSet()
+                                            if (isChecked) updated.remove(app.packageName)
+                                            else updated.add(app.packageName)
+                                            selectedApps = updated
+                                            AppListManager.saveSelectedApps(this@MainActivity, updated)
+                                            if (isRunning) restartVpn()
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = app.name,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 14.sp
+                                            )
+                                            Text(
+                                                text = app.packageName,
+                                                color = Color(0xFF78909C),
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        Checkbox(
+                                            checked = isChecked,
+                                            onCheckedChange = null
                                         )
                                     }
                                 }
@@ -321,6 +461,11 @@ class MainActivity : ComponentActivity() {
             controlVpn(true)
             onStarted()
         }
+    }
+
+    private fun restartVpn() {
+        controlVpn(false)
+        controlVpn(true)
     }
 
     private fun controlVpn(start: Boolean) {
