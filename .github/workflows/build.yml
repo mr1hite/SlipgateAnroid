@@ -31,10 +31,10 @@ jobs:
           TARGET_DIR="app/src/main/java/com/slipgate/android"
           mkdir -p "$TARGET_DIR"
 
-          # Принудительно удаляем любые поврежденные файлы с BootReceiver в названии
+          # Удаляем любые повреждённые файлы BootReceiver
           find "$TARGET_DIR" -name "*BootReceiver*" -delete || true
 
-          # Записываем чистый файл BootReceiver.kt
+          # Записываем чистый BootReceiver.kt
           cat << 'EOF' > "$TARGET_DIR/BootReceiver.kt"
           package com.slipgate.android
 
@@ -91,8 +91,34 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Build Debug APK
-        run: gradle :app:assembleDebug --no-daemon
+      - name: Prepare settings and Build APK
+        run: |
+          # Включаем AndroidX
+          echo "android.useAndroidX=true" >> gradle.properties
+          echo "android.enableJetifier=true" >> gradle.properties
+
+          # Всегда создаём гарантированно правильный settings.gradle.kts в корне
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "SlipgateAnroid"
+          include(":app")
+          EOF
+
+          # Запуск сборки модуля app с явным указанием созданного файла настроек
+          gradle -c settings.gradle.kts :app:assembleDebug --no-daemon
 
       - name: Upload Slipgate APK Artifact
         uses: actions/upload-artifact@v4
