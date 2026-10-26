@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -15,11 +16,12 @@ class SlipgateVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var ciadpiProcess: Process? = null
-    private var tun2socksProcess: Process? = null
 
+    // Нативный мост к libhev-socks5-tunnel.so (если подключён через JNI)
     companion object {
         const val ACTION_START = "com.slipgate.android.START"
         const val ACTION_STOP = "com.slipgate.android.STOP"
+
         @Volatile
         var isRunning = false
     }
@@ -40,6 +42,9 @@ class SlipgateVpnService : VpnService() {
         val prefs = getSharedPreferences("slipgate_prefs", Context.MODE_PRIVATE)
         val selectedId = prefs.getString("selected_strategy", "sg_1") ?: "sg_1"
         val customArgs = prefs.getString("custom_args", "")?.trim() ?: ""
+        // Режим: true = обход ТОЛЬКО для выбранных (Whitelist), false = для всех, КРОМЕ выбранных
+        val whitelistMode = prefs.getBoolean("whitelist_mode", true)
+        val selectedApps = AppListManager.getSelectedApps(this)
 
         val strategy = Strategies.presets.find { it.id == selectedId } ?: Strategies.presets.first()
         val activeArgs = if (customArgs.isNotEmpty()) {
@@ -48,9 +53,12 @@ class SlipgateVpnService : VpnService() {
             strategy.argsList
         }
 
-        startForeground(1, buildNotification("Активна: ${strategy.name}"))
+        startForeground(
+            1,
+            buildNotification("Стратегия: ${strategy.name} • Приложений: ${selectedApps.size}")
+        )
 
-        // 1. Запускаем движок десинхронизации ciadpi на 127.0.0.1:1080
+        // 1. Запускаем libciadpi.so на 127.0.0.1:1080
         val nativeDir = applicationInfo.nativeLibraryDir
         val ciadpiBin = File(nativeDir, "libciadpi.so")
         val cmd = mutableListOf(ciadpiBin.absolutePath, "-i", "127.0.0.1", "-p", "1080")
@@ -64,7 +72,7 @@ class SlipgateVpnService : VpnService() {
             return
         }
 
-        // 2. Создаём виртуальный TUN-интерфейс (только IPv4, чтобы избежать утечек YouTube по IPv6)
+        // 2. Настраиваем интерфейс VpnService и Split Tunneling
         val builder = Builder()
             .setSession("Slipgate DPI")
             .setMtu(1500)
@@ -73,10 +81,30 @@ class SlipgateVpnService : VpnService() {
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
 
-        // Исключаем само приложение во избежание петли маршрутизации
-        try {
-            builder.addDisallowedApplication(packageName)
-        } catch (_: Exception) {}
+        if (whitelistMode && selectedApps.isNotEmpty()) {
+            // Заворачиваем ТОЛЬКО выбранные приложения (YouTube, Discord и т.д.)
+            for (pkg in selectedApps) {
+                if (pkg == packageName) continue
+                try {
+                    packageManager.getPackageInfo(pkg, 0)
+                    builder.addAllowedApplication(pkg)
+                } catch (_: PackageManager.NameNotFoundException) {
+                    // Приложение не установлено на телефоне — пропускаем
+                }
+            }
+        } else {
+            // Заворачиваем ВЕСЬ трафик, кроме самого Slipgate и отмеченных исключений
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (_: Exception) {}
+
+            for (pkg in selectedApps) {
+                try {
+                    packageManager.getPackageInfo(pkg, 0)
+                    builder.addDisallowedApplication(pkg)
+                } catch (_: PackageManager.NameNotFoundException) {}
+            }
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
@@ -89,8 +117,6 @@ class SlipgateVpnService : VpnService() {
     private fun stopSlipgate() {
         isRunning = false
         try {
-            tun2socksProcess?.destroy()
-            tun2socksProcess = null
             ciadpiProcess?.destroy()
             ciadpiProcess = null
             vpnInterface?.close()
