@@ -26,6 +26,50 @@ jobs:
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
           printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > "$ANDROID_HOME/licenses/intel-android-extra-license"
 
+      - name: Clean broken files and recreate BootReceiver.kt
+        run: |
+          TARGET_DIR="app/src/main/java/com/slipgate/android"
+          mkdir -p "$TARGET_DIR"
+
+          # Принудительно удаляем любые поврежденные файлы с BootReceiver в названии
+          find "$TARGET_DIR" -name "*BootReceiver*" -delete || true
+
+          # Записываем чистый файл BootReceiver.kt
+          cat << 'EOF' > "$TARGET_DIR/BootReceiver.kt"
+          package com.slipgate.android
+
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.net.VpnService
+          import android.os.Build
+
+          class BootReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent) {
+                  val validActions = setOf(
+                      Intent.ACTION_BOOT_COMPLETED,
+                      "android.intent.action.QUICKBOOT_POWERON",
+                      Intent.ACTION_MY_PACKAGE_REPLACED
+                  )
+                  if (intent.action in validActions) {
+                      val prefs = context.getSharedPreferences("slipgate_prefs", Context.MODE_PRIVATE)
+                      val autoStart = prefs.getBoolean("auto_start", false)
+
+                      if (autoStart && VpnService.prepare(context) == null) {
+                          val serviceIntent = Intent(context, SlipgateVpnService::class.java).apply {
+                              action = SlipgateVpnService.ACTION_START
+                          }
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                              context.startForegroundService(serviceIntent)
+                          } else {
+                              context.startService(serviceIntent)
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
       - name: Compile native ByeDPI
         run: |
           git clone https://github.com/hufrea/byedpi.git /tmp/byedpi
@@ -48,8 +92,7 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build Debug APK
-        run: |
-          gradle :app:assembleDebug --no-daemon
+        run: gradle :app:assembleDebug --no-daemon
 
       - name: Upload Slipgate APK Artifact
         uses: actions/upload-artifact@v4
