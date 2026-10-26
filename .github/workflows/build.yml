@@ -26,4 +26,32 @@ jobs:
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$ANDROID_HOME/licenses/android-sdk-preview-license"
           printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > "$ANDROID_HOME/licenses/intel-android-extra-license"
 
-      - name: Compile native ByeDPI (libciadpi.so
+      - name: Compile native ByeDPI
+        run: |
+          git clone https://github.com/hufrea/byedpi.git /tmp/byedpi
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          mkdir -p app/src/main/jniLibs/armeabi-v7a
+
+          NDK_TOOLCHAIN="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          make -C /tmp/byedpi clean
+          make -C /tmp/byedpi CC="$NDK_TOOLCHAIN/aarch64-linux-android24-clang" LDFLAGS="-s -pie"
+          cp /tmp/byedpi/ciadpi app/src/main/jniLibs/arm64-v8a/libciadpi.so
+
+          make -C /tmp/byedpi clean
+          make -C /tmp/byedpi CC="$NDK_TOOLCHAIN/armv7a-linux-androideabi24-clang" LDFLAGS="-s -pie"
+          cp /tmp/byedpi/ciadpi app/src/main/jniLibs/armeabi-v7a/libciadpi.so
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Upload Slipgate APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Slipgate-Android-v1.8.0-debug
+          path: app/build/outputs/apk/debug/*.apk
